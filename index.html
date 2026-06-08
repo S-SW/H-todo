@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>极致黑白待办系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="user-profile">
+                <div class="avatar">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <div class="user-info">
+                    <span class="user-name">AHK N</span>
+                    <span class="user-email">2092594167@qq.com</span>
+                </div>
+            </div>
+
+<nav class="nav-menu">
+    <div class="nav-item active" data-type="system" data-id="today">
+        <span class="nav-left"><i class="fa-regular fa-sun"></i>我的一天</span>
+    </div>
+</nav>
+
+            <div class="divider"></div>
+
+            <div class="custom-lists-scroll">
+                <div id="custom-lists-container" class="custom-lists"></div>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="action-btn" id="create-list-btn" style="margin-bottom: 12px;">
+                    <i class="fa-solid fa-plus"></i>新建列表
+                </button>
+                <div class="sync-group">
+                    <button class="sync-btn cloud-push" id="cloud-push-btn" title="双向合并本地与云端数据">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>同步至云端
+                    </button>
+                    <button class="sync-btn cloud-pull" id="cloud-pull-btn" title="拉取云端最新更改合并至本地">
+                        <i class="fa-solid fa-cloud-arrow-down"></i>拉取云数据
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <div class="header-left">
+                    <h1 id="current-category-title">我的一天</h1>
+                    <p id="current-date" class="current-date">----.--.--</p>
+                </div>
+                <div class="header-right">
+                    <div class="filter-controls">
+                        <span class="filter-btn active" data-filter="all">全部</span>
+                        <span class="filter-btn" data-filter="pending">进行中</span>
+                        <span class="filter-btn" data-filter="completed">已完成</span>
+                    </div>
+                    <button class="icon-menu-btn" id="theme-toggle" title="切换明暗主题"><i class="fa-regular fa-moon"></i></button>
+                </div>
+            </header>
+
+            <div class="todo-list-scroller">
+                <ul id="todo-list"></ul>
+            </div>
+
+            <form id="todo-form" class="bottom-add-form">
+                <input type="text" id="todo-input" placeholder="添加任务，按 Enter 锁入..." autocomplete="off" required>
+                <button type="submit" class="form-submit-btn"><i class="fa-solid fa-arrow-up"></i></button>
+            </form>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

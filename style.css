@@ -1,0 +1,569 @@
+/* ==========================================================================
+   全新多端自适应 UI 主题控制系统
+   ========================================================================== */
+:root {
+    --bg-app: #111111;
+    --sidebar-bg: #1f1f1f;
+    --main-bg: #181818;
+    --card-bg: #252525;
+    --card-bg-completed: #1c1c1c;
+    --text-primary: #f5f5f5;
+    --text-muted: #888888;
+    --accent-color: #00b894; 
+    --line-split: #2c2c2c;
+    --input-bg: #222222;
+    --radius-main: 6px;
+    --transition-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] {
+    --bg-app: #f5f6fa;
+    --sidebar-bg: #ffffff;
+    --main-bg: #fafafa;
+    --card-bg: #ffffff;
+    --card-bg-completed: #f1f2f6;
+    --text-primary: #2f3542;
+    --text-muted: #a4b0be;
+    --accent-color: #2ed573;
+    --line-split: #f1f2f6;
+    --input-bg: #f1f2f6;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+.app-container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* ==========================================================================
+   左侧固定高质感侧边栏
+   ========================================================================== */
+.sidebar {
+    width: 280px;
+    background-color: var(--sidebar-bg);
+    padding: 24px 16px;
+    border-right: 1px solid var(--line-split);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding: 0 8px;
+}
+
+.user-profile .avatar {
+    width: 36px;
+    height: 36px;
+    background: #444;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+[data-theme="light"] .user-profile .avatar {
+    background: #ddd;
+    color: #333;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.user-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.user-email {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nav-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nav-item, .custom-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: var(--radius-main);
+    transition: background 0.2s, color 0.2s;
+    position: relative;
+}
+
+.nav-item:hover, .custom-list-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+[data-theme="light"] .nav-item:hover, 
+[data-theme="light"] .custom-list-item:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.nav-item.active, .custom-list-item.active {
+    background-color: rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+}
+[data-theme="light"] .nav-item.active,
+[data-theme="light"] .custom-list-item.active {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.nav-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.nav-left i {
+    width: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.nav-item.active .nav-left i,
+.custom-list-item.active .nav-left i {
+    color: var(--text-primary);
+}
+
+.list-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.badge {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: monospace;
+    margin-left: 6px;
+}
+
+.divider {
+    height: 1px;
+    background-color: var(--line-split);
+    margin: 12px 0;
+    flex-shrink: 0;
+}
+
+.custom-lists-scroll {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 90px;
+}
+.custom-lists-scroll::-webkit-scrollbar { width: 3px; }
+.custom-lists-scroll::-webkit-scrollbar-thumb { background: var(--line-split); }
+
+.custom-lists {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.list-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    margin-left: auto;
+    padding-right: 4px;
+}
+
+.custom-list-item:hover .list-actions {
+    opacity: 1;
+}
+
+.list-action-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px;
+}
+.list-action-btn:hover { color: #ff4757; }
+
+.list-edit-input {
+    background: var(--input-bg);
+    border: 1px solid var(--text-muted);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    padding: 1px 4px;
+    width: 80%;
+    border-radius: 3px;
+    outline: none;
+}
+
+.sidebar-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 14px 16px;
+    border-top: 1px solid var(--line-split);
+    background: var(--sidebar-bg);
+    display: flex;
+    flex-direction: column;
+}
+
+.action-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+/* 增强：同步动作按钮组样式 */
+.sync-group {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.sync-btn {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--line-split);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    padding: 6px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+
+.sync-btn:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: var(--text-muted);
+}
+
+.sync-btn.cloud-push:active {
+    color: #00b894;
+}
+
+/* ==========================================================================
+   右侧核心主工作台
+   ========================================================================== */
+.main-content {
+    flex: 1;
+    background-color: var(--main-bg);
+    padding: 32px 40px 100px 40px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    flex-shrink: 0;
+}
+
+.main-header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.current-date {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.filter-controls {
+    display: flex;
+    gap: 12px;
+}
+
+.filter-btn {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding-bottom: 2px;
+    position: relative;
+}
+
+.filter-btn.active {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.filter-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: var(--text-primary);
+}
+
+.clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.clear-btn:hover { color: #ff4757; }
+
+.icon-menu-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 1rem;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.icon-menu-btn:hover { background-color: rgba(255, 255, 255, 0.05); }
+
+.todo-list-scroller {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.todo-list-scroller::-webkit-scrollbar { width: 4px; }
+.todo-list-scroller::-webkit-scrollbar-thumb { background: var(--line-split); border-radius: 2px; }
+
+#todo-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.todo-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--card-bg);
+    padding: 14px 16px;
+    border-radius: var(--radius-main);
+    border: 1px solid transparent;
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+.todo-item:hover {
+    border-color: var(--text-muted);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.item-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1;
+    min-width: 0;
+}
+
+.todo-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--text-muted);
+    border-radius: 50%;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+}
+
+.todo-check:checked {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.todo-check:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 3px;
+    width: 4px;
+    height: 8px;
+    border: solid #111;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+
+.todo-title {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    word-break: break-all;
+    cursor: pointer;
+}
+
+.todo-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 4px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s;
+}
+.todo-item:hover .delete-btn { opacity: 1; }
+.delete-btn:hover { color: #ff4757; }
+
+.todo-item.completed {
+    opacity: 0.5;
+    background-color: var(--card-bg-completed);
+}
+.todo-item.completed .todo-title {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.inline-edit-input {
+    background: var(--input-bg);
+    border: 1px solid var(--text-muted);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    padding: 2px 4px;
+    border-radius: 3px;
+    outline: none;
+    width: 100%;
+}
+
+.bottom-add-form {
+    position: absolute;
+    bottom: 24px;
+    left: 40px;
+    right: 40px;
+    background-color: var(--card-bg);
+    border-radius: var(--radius-main);
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+
+.bottom-add-form input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 12px 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.form-submit-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    cursor: pointer;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+}
+
+/* 全局加载微调动画 */
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* 任务列表基础卡片项样式布局 */
+.todo-item-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background-color: var(--card-bg);
+    border-radius: var(--radius-main);
+    margin-bottom: 10px;
+    transition: background-color 0.2s, transform 0.2s;
+    position: relative;
+}
+
+/* 垃圾桶按钮默认隐藏并向右偏移 4px */
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 0.95rem;
+    transition: color 0.25s ease, transform 0.2s ease, opacity 0.2s ease;
+    opacity: 0;
+    transform: translateX(4px);
+}
+
+/* 鼠标移入卡片时，让垃圾桶显现并归位 */
+.todo-item-card:hover .delete-btn {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* 鼠标悬停在垃圾桶上变红色 */
+.delete-btn:hover {
+    color: #ff4757 !important;
+}
