@@ -1,6 +1,6 @@
 /**
  * ==========================================================================
- * 极简待办云端驱动引擎 - 本地优先 + 智能合并双向同步版 (2026 修复版)
+ * 极简待办云端驱动引擎 - 纯云端直连数据库版（完美适配版）
  * ==========================================================================
  */
 
@@ -12,43 +12,11 @@ const headers = {
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${SUPABASE_KEY}`,
   "Content-Type": "application/json",
-  Prefer: "resolution=merge-duplicates", // 使用 upsert 时的合并冲突策略
 };
 
-// 离线优先核心堆栈
-let todos = JSON.parse(localStorage.getItem("todo_items_store")) || [];
-let customLists = JSON.parse(localStorage.getItem("todo_lists_store")) || [
-  {
-    id: "list_5",
-    name: "每日任务",
-    icon: "fa-regular fa-folder",
-    created_at: 1717800005000,
-  },
-  {
-    id: "list_4",
-    name: "大学之后",
-    icon: "fa-regular fa-folder",
-    created_at: 1717800004000,
-  },
-  {
-    id: "list_3",
-    name: "目的地",
-    icon: "fa-solid fa-bars-staggered",
-    created_at: 1717800003000,
-  },
-  {
-    id: "list_2",
-    name: "旅行计划",
-    icon: "fa-regular fa-folder",
-    created_at: 1717800002000,
-  },
-  {
-    id: "list_1",
-    name: "26.3.16之前",
-    icon: "fa-regular fa-calendar",
-    created_at: 1717800001000,
-  },
-];
+// 纯内存状态跟踪
+let todos = [];
+let customLists = [];
 
 let currentRoute = { type: "system", id: "today" };
 let currentFilter = "all";
@@ -61,18 +29,15 @@ const currentCategoryTitle = document.getElementById("current-category-title");
 const currentDateEl = document.getElementById("current-date");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const customListsContainer = document.getElementById("custom-lists-container");
-const cloudPushBtn = document.getElementById("cloud-push-btn");
-const cloudPullBtn = document.getElementById("cloud-pull-btn");
 
 document.addEventListener("DOMContentLoaded", () => {
   initClock();
   initTheme();
   setupSystemRoutes();
   setupFilters();
-  setupSyncActions();
 
-  renderCustomLists();
-  renderApp();
+  // 首次进入页面，直接从数据库全量拉取
+  fetchAndRenderAll();
 });
 
 function initClock() {
@@ -84,42 +49,59 @@ function initClock() {
     .replace(/\//g, ".");
 }
 
-function saveLocalState() {
-  localStorage.setItem("todo_items_store", JSON.stringify(todos));
-  localStorage.setItem("todo_lists_store", JSON.stringify(customLists));
-  updateBadges();
+/**
+ * ==========================================================================
+ * 核心数据库交互（直连云端）
+ * ==========================================================================
+ */
+
+// 从云端统一拉取分类和待办，并重新渲染
+async function fetchAndRenderAll() {
+  try {
+    const [listRes, todoRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/todos`, { headers })
+    ]);
+
+    if (!listRes.ok || !todoRes.ok) throw new Error("从数据库获取数据失败");
+
+    customLists = await listRes.json();
+    todos = await todoRes.json();
+
+    renderCustomLists();
+    renderApp();
+  } catch (error) {
+    console.error("数据库连接错误:", error);
+  }
 }
 
 function updateBadges() {
-    // 1. 我的一天：分类为 today 且未完成
-    const badgeToday = document.getElementById('badge-today');
-    if (badgeToday) {
-        badgeToday.textContent = todos.filter(t => !t.is_completed && t.category === 'today').length || '0';
-    }
+  const badgeToday = document.getElementById('badge-today');
+  if (badgeToday) {
+    badgeToday.textContent = todos.filter(t => !t.is_completed && t.category === 'today').length || '0';
+  }
 
-    // 2. 所有任务：全系统未完成总数
-    const badgeAllTasks = document.getElementById('badge-all-tasks');
-    if (badgeAllTasks) {
-        badgeAllTasks.textContent = todos.filter(t => !t.is_completed).length || '0';
-    }
+  const badgeAllTasks = document.getElementById('badge-all-tasks');
+  if (badgeAllTasks) {
+    badgeAllTasks.textContent = todos.filter(t => !t.is_completed).length || '0';
+  }
 
-    // 3. 自定义文件夹
-    customLists.forEach(list => {
-        const badgeEl = document.getElementById(`badge-custom-${list.id}`);
-        if (badgeEl) {
-            const count = todos.filter(t => !t.is_completed && String(t.category) === String(list.id)).length;
-            badgeEl.textContent = count || '0';
-        }
-    });
+  customLists.forEach(list => {
+    const badgeEl = document.getElementById(`badge-custom-${list.id}`);
+    if (badgeEl) {
+      const count = todos.filter(t => !t.is_completed && String(t.category) === String(list.id)).length;
+      badgeEl.textContent = count || '0';
+    }
+  });
 }
 
 // ==========================================================================
-// 核心视图渲染控制
+// 视图渲染控制
 // ==========================================================================
 function renderCustomLists() {
   customListsContainer.innerHTML = "";
   const sortedLists = [...customLists].sort(
-    (a, b) => (b.created_at || 0) - (a.created_at || 0),
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 
   sortedLists.forEach((list) => {
@@ -127,10 +109,7 @@ function renderCustomLists() {
     div.className = "custom-list-item";
     div.dataset.id = list.id;
 
-    if (
-      currentRoute.type === "custom" &&
-      String(currentRoute.id) === String(list.id)
-    ) {
+    if (currentRoute.type === "custom" && String(currentRoute.id) === String(list.id)) {
       div.classList.add("active");
     }
 
@@ -147,51 +126,49 @@ function renderCustomLists() {
         `;
 
     div.addEventListener("click", (e) => {
-      if (
-        e.target.closest(".list-action-btn") ||
-        e.target.closest(".list-edit-input")
-      )
-        return;
-      document
-        .querySelectorAll(".nav-item, .custom-list-item")
-        .forEach((el) => el.classList.remove("active"));
+      if (e.target.closest(".list-action-btn") || e.target.closest(".list-edit-input")) return;
+      document.querySelectorAll(".nav-item, .custom-list-item").forEach((el) => el.classList.remove("active"));
       div.classList.add("active");
       currentRoute = { type: "custom", id: list.id };
       currentCategoryTitle.textContent = list.name;
       renderApp();
     });
 
-    div
-      .querySelector(".rename")
-      .addEventListener("click", () => startRenameList(list.id));
-    div
-      .querySelector(".delete")
-      .addEventListener("click", () => deleteCustomList(list.id));
+    div.querySelector(".rename").addEventListener("click", () => startRenameList(list.id));
+    div.querySelector(".delete").addEventListener("click", () => deleteCustomList(list.id));
 
     customListsContainer.appendChild(div);
   });
   updateBadges();
 }
 
-document.getElementById("create-list-btn").addEventListener("click", () => {
+document.getElementById("create-list-btn").addEventListener("click", async () => {
   const name = prompt("请输入新建文件夹/标签列表名称:");
   if (!name || !name.trim()) return;
 
+  const listId = "list_" + Date.now();
   const newList = {
-    id: "list_" + Date.now(), // 统一使用带前缀的字符串作为唯一主键
+    id: listId,
     name: name.trim(),
     icon: "fa-regular fa-folder",
-    created_at: Date.now(),
+    created_at: new Date().toISOString()
   };
 
-  customLists.push(newList);
-  saveLocalState();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(newList)
+    });
+    if (!res.ok) throw new Error("创建分类失败");
 
-  currentRoute = { type: "custom", id: newList.id };
-  currentCategoryTitle.textContent = newList.name;
-
-  renderCustomLists();
-  renderApp();
+    currentRoute = { type: "custom", id: listId };
+    currentCategoryTitle.textContent = newList.name;
+    
+    await fetchAndRenderAll();
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 function startRenameList(id) {
@@ -206,18 +183,24 @@ function startRenameList(id) {
   parent.replaceChild(input, textSpan);
   input.focus();
 
-  const saveRename = () => {
+  const saveRename = async () => {
     const nextName = input.value.trim();
     if (nextName && nextName !== currentName) {
-      customLists = customLists.map((l) =>
-        l.id === id ? { ...l, name: nextName } : l,
-      );
-      if (currentRoute.type === "custom" && currentRoute.id === id) {
-        currentCategoryTitle.textContent = nextName;
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists?id=eq.${id}`, {
+          method: "PATCH",
+          headers: headers,
+          body: JSON.stringify({ name: nextName })
+        });
+        if (!res.ok) throw new Error("修改分类名称失败");
+        if (currentRoute.type === "custom" && currentRoute.id === id) {
+          currentCategoryTitle.textContent = nextName;
+        }
+      } catch (error) {
+        alert(error.message);
       }
-      saveLocalState();
     }
-    renderCustomLists();
+    await fetchAndRenderAll();
   };
 
   input.addEventListener("blur", saveRename);
@@ -226,49 +209,56 @@ function startRenameList(id) {
   });
 }
 
-function deleteCustomList(id) {
-  if (
-    !confirm(
-      "确定要在本地删除该标签文件夹吗？其中任务也会被清除。（同步后云端才会同步修改）",
-    )
-  )
-    return;
-  todos = todos.filter((t) => String(t.category) !== String(id));
-  customLists = customLists.filter((l) => l.id !== id);
-  currentRoute = { type: "system", id: "today" };
-  currentCategoryTitle.textContent = "我的一天";
-  saveLocalState();
-  renderCustomLists();
-  renderApp();
+async function deleteCustomList(id) {
+  if (!confirm("确定要在云端删除该标签文件夹吗？其中关联的任务也会在数据库中同步清除。")) return;
+  
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/todos?category=eq.${id}`, {
+      method: "DELETE",
+      headers: headers
+    });
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists?id=eq.${id}`, {
+      method: "DELETE",
+      headers: headers
+    });
+    if (!res.ok) throw new Error("删除分类失败");
+
+    currentRoute = { type: "system", id: "today" };
+    currentCategoryTitle.textContent = "我的一天";
+    
+    await fetchAndRenderAll();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function renderApp() {
   todoList.innerHTML = "";
-  // 最新创建的永远排在最上面
-  const sortedTodos = [...todos].sort(
-    (a, b) => (b.created_at_ts || 0) - (a.created_at_ts || 0),
-  );
+  
+  // 完美适配：统一使用标准的 created_at 字段计算时间戳并做倒序排列
+  const sortedTodos = [...todos].sort((a, b) => {
+    const timeA = new Date(a.created_at).getTime() || 0;
+    const timeB = new Date(b.created_at).getTime() || 0;
+    return timeB - timeA;
+  });
 
-  // 获取今天的日期字符串 (如 "2026/6/8")
   const todayDateStr = new Date().toLocaleDateString();
-  let hasLocalChanges = false;
+  let needToMigrateTasks = [];
 
   let filteredTodos = sortedTodos.filter((todo) => {
-    // 🌟 核心防呆洗牌：如果是以前创建的、且还未完成的 "today" 任务
+    // 跨天自动流转：使用正确的 created_at 校验
     if (todo.category === "today" && !todo.is_completed) {
-      const taskDateStr = new Date(
-        todo.created_at_ts || Date.now(),
-      ).toLocaleDateString();
+      const todoTime = new Date(todo.created_at).getTime() || Date.now();
+      const taskDateStr = new Date(todoTime).toLocaleDateString();
       if (taskDateStr !== todayDateStr) {
-        todo.category = "all_tasks"; // 真正改变它的归属分类，让它沉淀
-        hasLocalChanges = true; // 标记本地数据发生了流转改写
+        todo.category = "all_tasks"; 
+        needToMigrateTasks.push(todo.id);
       }
     }
 
-    // 路由分流渲染
     if (currentRoute.type === "system") {
-      if (currentRoute.id === "today" && todo.category !== "today")
-        return false;
+      if (currentRoute.id === "today" && todo.category !== "today") return false;
       if (currentRoute.id === "all_tasks") return true;
     } else {
       if (String(todo.category) !== String(currentRoute.id)) return false;
@@ -279,11 +269,14 @@ function renderApp() {
     return true;
   });
 
-  // 如果触发了跨天自动洗牌，静默保存并推送到云端，防止死灰复燃
-  if (hasLocalChanges) {
-    saveLocalState();
-    // 触发一次静默后台批量推送，让 Supabase 云端也同步更新分类
-    setTimeout(pushCloudData, 1000);
+  if (needToMigrateTasks.length > 0) {
+    needToMigrateTasks.forEach(async (tid) => {
+      await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${tid}`, {
+        method: "PATCH",
+        headers: headers,
+        body: JSON.stringify({ category: "all_tasks" })
+      });
+    });
   }
 
   if (filteredTodos.length === 0) {
@@ -294,7 +287,6 @@ function renderApp() {
 
   filteredTodos.forEach((todo) => {
     const li = document.createElement("li");
-    // 注意：这里 class 改回匹配你 CSS 的样式规范，支持鼠标悬停显示垃圾桶
     li.className = `todo-item todo-item-card ${todo.is_completed ? "completed" : ""}`;
 
     li.innerHTML = `
@@ -312,45 +304,40 @@ function renderApp() {
     const deleteBtn = li.querySelector(".delete-btn");
     const titleSpan = li.querySelector(".todo-title");
 
-    // 勾选状态切换
-    checkbox.addEventListener("change", () => {
-      todo.is_completed = !todo.is_completed;
-      if (todo.is_completed) {
+    checkbox.addEventListener("change", async () => {
+      const nextStatus = !todo.is_completed;
+      if (nextStatus) {
         playSuccessSound();
         triggerParticleEffect(checkbox);
       }
-      saveLocalState();
-      setTimeout(renderApp, 220);
-    });
-
-    // ✨ 核心强化：智能双料删除事件
-    deleteBtn.addEventListener("click", async () => {
-      // 1. 内存及本地秒级响应移除
-      todos = todos.filter((t) => String(t.id) !== String(todo.id));
-      saveLocalState();
-      renderApp();
-
-      // 2. 静默在后台通知云端数据库删除对应的单条任务记录（确保拉取合并时不会死灰复燃）
+      
       try {
-        const targetId = String(todo.id).startsWith("task_")
-          ? todo.id
-          : "task_" + todo.id;
-        await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${targetId}`, {
-          method: "DELETE",
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`, {
+          method: "PATCH",
+          headers: headers,
+          body: JSON.stringify({ is_completed: nextStatus })
         });
-      } catch (err) {
-        console.warn("网络离线，云端任务将在下次完全同步时处理:", err);
+        if (!res.ok) throw new Error("更新任务状态失败");
+        setTimeout(fetchAndRenderAll, 220);
+      } catch (error) {
+        alert(error.message);
       }
     });
 
-    // 双击编辑标题
-    titleSpan.addEventListener("dblclick", () =>
-      startInlineEdit(titleSpan, todo.id),
-    );
+    deleteBtn.addEventListener("click", async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`, {
+          method: "DELETE",
+          headers: headers
+        });
+        if (!res.ok) throw new Error("数据库删除任务失败");
+        await fetchAndRenderAll();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    titleSpan.addEventListener("dblclick", () => startInlineEdit(titleSpan, todo.id));
     todoList.appendChild(li);
   });
 
@@ -362,46 +349,36 @@ todoForm.addEventListener("submit", async (e) => {
   const title = todoInput.value.trim();
   if (!title) return;
 
-  // 🌟 智能分类防呆：如果当前在“所有任务”里添加任务，默认把它划分到“我的一天 (today)”
   let targetCategory = currentRoute.id;
   if (targetCategory === "all_tasks") {
     targetCategory = "today";
   }
 
   const timestamp = Date.now();
+  // 💎 核心修复点：精准对齐你的 Supabase 字段，移除非法字段
   const newTodo = {
     id: "task_" + timestamp + "_" + Math.random().toString(36).substr(2, 5),
     title: title,
     is_completed: false,
-    category: targetCategory, // 自动锚定安全分类
-    created_at_ts: timestamp,
-    date_tag: getFormatedDateTag(),
+    category: String(targetCategory),
+    created_at: new Date().toISOString(),
+    date_tag: getFormatedDateTag() // 保留，因为你的表里确实有这一列
   };
 
-  todos.push(newTodo);
-  saveLocalState();
   todoInput.value = "";
-  renderApp();
 
-  // 顺滑滚动到顶部看新添加的任务
-  document.querySelector(".todo-list-scroller").scrollTop = 0;
-
-  // 静默推送到云端数据库
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/todos`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/todos`, {
       method: "POST",
       headers: headers,
-      body: JSON.stringify({
-        id: newTodo.id,
-        title: newTodo.title,
-        is_completed: newTodo.is_completed,
-        category: String(newTodo.category),
-        created_at_ts: newTodo.created_at_ts,
-        date_tag: newTodo.date_tag,
-      }),
+      body: JSON.stringify(newTodo)
     });
+    if (!res.ok) throw new Error("向云端添加任务失败");
+
+    await fetchAndRenderAll();
+    document.querySelector(".todo-list-scroller").scrollTop = 0;
   } catch (err) {
-    console.warn("网络离线，数据将在下次同步时批量安全推送", err);
+    alert(err.message);
   }
 });
 
@@ -416,13 +393,21 @@ function startInlineEdit(spanElement, id) {
   parent.replaceChild(input, spanElement);
   input.focus();
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const nextText = input.value.trim();
     if (nextText && nextText !== currentText) {
-      todos = todos.map((t) => (t.id === id ? { ...t, title: nextText } : t));
-      saveLocalState();
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${id}`, {
+          method: "PATCH",
+          headers: headers,
+          body: JSON.stringify({ title: nextText })
+        });
+        if (!res.ok) throw new Error("更新任务文本失败");
+      } catch (error) {
+        alert(error.message);
+      }
     }
-    renderApp();
+    await fetchAndRenderAll();
   };
   input.addEventListener("blur", saveEdit);
   input.addEventListener("keypress", (e) => {
@@ -431,152 +416,12 @@ function startInlineEdit(spanElement, id) {
 }
 
 // ==========================================================================
-// 核心模块：智能合并双向手动同步机制（解决数据丢失与离线合并）
-// ==========================================================================
-function setupSyncActions() {
-  cloudPushBtn.addEventListener("click", async () => {
-    const icon = cloudPushBtn.querySelector("i");
-    icon.className = "fa-solid fa-circle-notch animate-spin";
-    cloudPushBtn.disabled = true;
-
-    try {
-      // 【策略升级】直接采用本地ID作为主键同步，不再清空，而是使用不覆盖的增量上传
-      const listsToUpload = customLists.map((l) => ({
-        id: String(l.id), // 直接把本地ID串推送上云，两端完全对齐
-        name: l.name,
-        icon: l.icon,
-        created_at: new Date(l.created_at || Date.now()).toISOString(),
-      }));
-
-      // 1. 推送文件夹大类
-      const listRes = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, {
-        method: "POST",
-        headers: { ...headers, Prefer: "resolution=merge-duplicates" },
-        body: JSON.stringify(listsToUpload),
-      });
-      if (!listRes.ok && listRes.status !== 400)
-        throw new Error("同步云端文件夹失败");
-
-      // 2. 准备推送任务明细 (直接保留本地的分类ID字符串映射)
-      const todosToUpload = todos.map((t) => ({
-        id: String(t.id).startsWith("task_") ? t.id : "task_" + t.id, // 确保ID具有唯一前缀标识
-        title: t.title || "",
-        is_completed: !!t.is_completed,
-        category: String(t.category), // 这样 category 永远能找到它对应的文件夹，不会丢失！
-        date_tag: t.date_tag || "",
-        created_at: new Date(t.created_at_ts || Date.now()).toISOString(),
-      }));
-
-      if (todosToUpload.length > 0) {
-        const todoRes = await fetch(`${SUPABASE_URL}/rest/v1/todos`, {
-          method: "POST",
-          headers: { ...headers, Prefer: "resolution=merge-duplicates" },
-          body: JSON.stringify(todosToUpload),
-        });
-        if (!todoRes.ok && todoRes.status !== 400)
-          throw new Error("同步云端任务细项失败");
-      }
-
-      // 3. 上传完本地后，立刻拉取云端进行智能双向合并
-      await pullAndMergeFromCloud();
-      alert("✨ 本地与云端数据已双向合并成功！数据永不丢失。");
-    } catch (error) {
-      console.error(error);
-      alert(`❌ 同步失败: ${error.message}`);
-    } finally {
-      icon.className = "fa-solid fa-cloud-arrow-up";
-      cloudPushBtn.disabled = false;
-    }
-  });
-
-  cloudPullBtn.addEventListener("click", async () => {
-    const icon = cloudPullBtn.querySelector("i");
-    icon.className = "fa-solid fa-circle-notch animate-spin";
-    cloudPullBtn.disabled = true;
-
-    try {
-      await pullAndMergeFromCloud();
-      alert("📥 云端最新快照已顺利拉取并合并至本地！");
-    } catch (e) {
-      alert(`拉取合并失败: ${e.message}`);
-    } finally {
-      icon.className = "fa-solid fa-cloud-arrow-down";
-      cloudPullBtn.disabled = false;
-    }
-  });
-}
-
-// 核心智能合并算法：云端本地双向并集保留
-async function pullAndMergeFromCloud() {
-  // 1. 获取云端最新文件夹
-  const listRes = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-  });
-  if (!listRes.ok) throw new Error("拉取云端标签失败");
-  const cloudLists = await listRes.json();
-
-  // 合并分类列表（如果本地没有这个云端ID，就加进来；如果有了，更新名称）
-  cloudLists.forEach((cl) => {
-    const localIndex = customLists.findIndex(
-      (l) => String(l.id) === String(cl.id),
-    );
-    if (localIndex > -1) {
-      customLists[localIndex].name = cl.name; // 以云端最新的命名为准
-    } else {
-      customLists.push({
-        id: cl.id,
-        name: cl.name,
-        icon: cl.icon || "fa-regular fa-folder",
-        created_at: cl.created_at
-          ? new Date(cl.created_at).getTime()
-          : Date.now(),
-      });
-    }
-  });
-
-  // 2. 获取云端最新任务流
-  const todoRes = await fetch(`${SUPABASE_URL}/rest/v1/todos`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-  });
-  if (!todoRes.ok) throw new Error("拉取云端待办流失败");
-  const cloudTodos = await todoRes.json();
-
-  // 合并任务流
-  cloudTodos.forEach((ct) => {
-    const localIndex = todos.findIndex((t) => String(t.id) === String(ct.id));
-    if (localIndex > -1) {
-      // 本地已有，进行状态同步覆盖
-      todos[localIndex].is_completed = ct.is_completed;
-      todos[localIndex].title = ct.title;
-    } else {
-      // 本地没有的云端项，完美追加合并
-      todos.push({
-        id: ct.id,
-        title: ct.title,
-        is_completed: ct.is_completed,
-        category: ct.category,
-        date_tag: ct.date_tag,
-        created_at_ts: ct.created_at
-          ? new Date(ct.created_at).getTime()
-          : Date.now(),
-      });
-    }
-  });
-
-  saveLocalState();
-  renderCustomLists();
-  renderApp();
-}
-
-// ==========================================================================
 // 辅助模块：支撑系统
 // ==========================================================================
 function setupSystemRoutes() {
   document.querySelectorAll(".nav-menu .nav-item").forEach((item) => {
     item.addEventListener("click", () => {
-      document
-        .querySelectorAll(".nav-item, .custom-list-item")
-        .forEach((n) => n.classList.remove("active"));
+      document.querySelectorAll(".nav-item, .custom-list-item").forEach((n) => n.classList.remove("active"));
       item.classList.add("active");
       currentRoute = { type: "system", id: item.dataset.id };
       currentCategoryTitle.textContent = item.textContent.trim();
@@ -588,9 +433,7 @@ function setupSystemRoutes() {
 function setupFilters() {
   document.querySelectorAll(".filter-controls .filter-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document
-        .querySelectorAll(".filter-controls .filter-btn")
-        .forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".filter-controls .filter-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentFilter = btn.dataset.filter;
       renderApp();
@@ -601,17 +444,20 @@ function setupFilters() {
 function initTheme() {
   const savedTheme = localStorage.getItem("theme") || "dark";
   document.documentElement.setAttribute("data-theme", savedTheme);
-  themeToggleBtn.querySelector("i").className =
-    savedTheme === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
+  themeToggleBtn.querySelector("i").className = savedTheme === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
 
   themeToggleBtn.addEventListener("click", () => {
     const curr = document.documentElement.getAttribute("data-theme");
     const next = curr === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-    themeToggleBtn.querySelector("i").className =
-      next === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
+    themeToggleBtn.querySelector("i").className = next === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
   });
+}
+
+function getFormatedDateTag() {
+  const now = new Date();
+  return `${now.getMonth() + 1}月${now.getDate()}日`;
 }
 
 function playSuccessSound() {
@@ -652,10 +498,9 @@ function triggerParticleEffect(element) {
   canvas.height = window.innerHeight;
 
   const particles = [];
-  const colors =
-    document.documentElement.getAttribute("data-theme") === "dark"
-      ? ["#ffffff", "#aaaaaa", "#00b894"]
-      : ["#111111", "#aaaaaa", "#2ed573"];
+  const colors = document.documentElement.getAttribute("data-theme") === "dark"
+    ? ["#ffffff", "#aaaaaa", "#00b894"]
+    : ["#111111", "#aaaaaa", "#2ed573"];
 
   for (let i = 0; i < 25; i++) {
     const angle = Math.random() * Math.PI * 2;
