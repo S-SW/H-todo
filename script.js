@@ -1,6 +1,6 @@
 /**
  * ==========================================================================
- * 极简待办云端驱动引擎 - 纯云端直连数据库版（完美适配版）
+ * 极简待办云端驱动引擎 - 纯云端直连数据库版（全局登录保护版）
  * ==========================================================================
  */
 
@@ -13,6 +13,55 @@ const headers = {
   Authorization: `Bearer ${SUPABASE_KEY}`,
   "Content-Type": "application/json",
 };
+
+// ==========================================================================
+// 权限安全验证模块 (SHA-256 哈希加密)
+// ==========================================================================
+// 预设的访问密码哈希值（当前对应明文密码为：123456）
+const AUTH_PASSWORD_HASH =
+  "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
+
+// 全局登录状态隔离锁
+let isLoggedIn = false;
+
+// 使用 Web Crypto API 计算字符串的 SHA-256 哈希值
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// 站点入口身份验证
+async function requireLogin() {
+  const password = prompt(
+    "🔐 欢迎访问 NAHKtodo，请输入全局身份验证密码以开启编辑权限:",
+  );
+  if (password === null) {
+    alert("⚠ 您取消了登录，网站将切换为【只读模式】，无法添加和删除数据。");
+    return false;
+  }
+
+  const hashedInput = await sha256(password.trim());
+  if (hashedInput === AUTH_PASSWORD_HASH) {
+    alert("✅ 密码验证成功！欢迎回来，NAHK。");
+    return true;
+  } else {
+    alert("❌ 密码错误！网站已进入【只读模式】，添加与删除功能已被完全锁死。");
+    return false;
+  }
+}
+
+// 核心操作守卫：拦截一切未授权的写入/删除行为
+function checkAuthGuard() {
+  if (!isLoggedIn) {
+    alert(
+      "🚫 核心权限被拦截：您当前处于【只读模式】，请输入正确的密码重新登录后操作！",
+    );
+    return false;
+  }
+  return true;
+}
 
 // 纯内存状态跟踪
 let todos = [];
@@ -30,13 +79,17 @@ const currentDateEl = document.getElementById("current-date");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const customListsContainer = document.getElementById("custom-lists-container");
 
-document.addEventListener("DOMContentLoaded", () => {
+// 💡 异步生命周期初始化：必须先走完密码验证，再决定是否开启权限并拉取数据
+document.addEventListener("DOMContentLoaded", async () => {
   initClock();
   initTheme();
   setupSystemRoutes();
   setupFilters();
 
-  // 首次进入页面，直接从数据库全量拉取
+  // 1. 优先执行登录验证
+  isLoggedIn = await requireLogin();
+
+  // 2. 无论是否登录成功，均允许拉取并渲染数据（只读模式也可以看，但不能改删）
   fetchAndRenderAll();
 });
 
@@ -60,7 +113,7 @@ async function fetchAndRenderAll() {
   try {
     const [listRes, todoRes] = await Promise.all([
       fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/todos`, { headers })
+      fetch(`${SUPABASE_URL}/rest/v1/todos`, { headers }),
     ]);
 
     if (!listRes.ok || !todoRes.ok) throw new Error("从数据库获取数据失败");
@@ -76,21 +129,26 @@ async function fetchAndRenderAll() {
 }
 
 function updateBadges() {
-  const badgeToday = document.getElementById('badge-today');
+  const badgeToday = document.getElementById("badge-today");
   if (badgeToday) {
-    badgeToday.textContent = todos.filter(t => !t.is_completed && t.category === 'today').length || '0';
+    badgeToday.textContent =
+      todos.filter((t) => !t.is_completed && t.category === "today").length ||
+      "0";
   }
 
-  const badgeAllTasks = document.getElementById('badge-all-tasks');
+  const badgeAllTasks = document.getElementById("badge-all-tasks");
   if (badgeAllTasks) {
-    badgeAllTasks.textContent = todos.filter(t => !t.is_completed).length || '0';
+    badgeAllTasks.textContent =
+      todos.filter((t) => !t.is_completed).length || "0";
   }
 
-  customLists.forEach(list => {
+  customLists.forEach((list) => {
     const badgeEl = document.getElementById(`badge-custom-${list.id}`);
     if (badgeEl) {
-      const count = todos.filter(t => !t.is_completed && String(t.category) === String(list.id)).length;
-      badgeEl.textContent = count || '0';
+      const count = todos.filter(
+        (t) => !t.is_completed && String(t.category) === String(list.id),
+      ).length;
+      badgeEl.textContent = count || "0";
     }
   });
 }
@@ -101,7 +159,8 @@ function updateBadges() {
 function renderCustomLists() {
   customListsContainer.innerHTML = "";
   const sortedLists = [...customLists].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
 
   sortedLists.forEach((list) => {
@@ -109,7 +168,10 @@ function renderCustomLists() {
     div.className = "custom-list-item";
     div.dataset.id = list.id;
 
-    if (currentRoute.type === "custom" && String(currentRoute.id) === String(list.id)) {
+    if (
+      currentRoute.type === "custom" &&
+      String(currentRoute.id) === String(list.id)
+    ) {
       div.classList.add("active");
     }
 
@@ -126,52 +188,70 @@ function renderCustomLists() {
         `;
 
     div.addEventListener("click", (e) => {
-      if (e.target.closest(".list-action-btn") || e.target.closest(".list-edit-input")) return;
-      document.querySelectorAll(".nav-item, .custom-list-item").forEach((el) => el.classList.remove("active"));
+      if (
+        e.target.closest(".list-action-btn") ||
+        e.target.closest(".list-edit-input")
+      )
+        return;
+      document
+        .querySelectorAll(".nav-item, .custom-list-item")
+        .forEach((el) => el.classList.remove("active"));
       div.classList.add("active");
       currentRoute = { type: "custom", id: list.id };
       currentCategoryTitle.textContent = list.name;
       renderApp();
     });
 
-    div.querySelector(".rename").addEventListener("click", () => startRenameList(list.id));
-    div.querySelector(".delete").addEventListener("click", () => deleteCustomList(list.id));
+    div
+      .querySelector(".rename")
+      .addEventListener("click", () => startRenameList(list.id));
+    div
+      .querySelector(".delete")
+      .addEventListener("click", () => deleteCustomList(list.id));
 
     customListsContainer.appendChild(div);
   });
   updateBadges();
 }
 
-document.getElementById("create-list-btn").addEventListener("click", async () => {
-  const name = prompt("请输入新建文件夹/标签列表名称:");
-  if (!name || !name.trim()) return;
+document
+  .getElementById("create-list-btn")
+  .addEventListener("click", async () => {
+    // 🔐 登录守卫拦截
+    if (!checkAuthGuard()) return;
 
-  const listId = "list_" + Date.now();
-  const newList = {
-    id: listId,
-    name: name.trim(),
-    icon: "fa-regular fa-folder",
-    created_at: new Date().toISOString()
-  };
+    const name = prompt("请输入新建文件夹/标签列表名称:");
+    if (!name || !name.trim()) return;
 
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify(newList)
-    });
-    if (!res.ok) throw new Error("创建分类失败");
+    const listId = "list_" + Date.now();
+    const newList = {
+      id: listId,
+      name: name.trim(),
+      icon: "fa-regular fa-folder",
+      created_at: new Date().toISOString(),
+    };
 
-    currentRoute = { type: "custom", id: listId };
-    currentCategoryTitle.textContent = newList.name;
-    
-    await fetchAndRenderAll();
-  } catch (error) {
-    alert(error.message);
-  }
-});
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists`, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(newList),
+      });
+      if (!res.ok) throw new Error("创建分类失败");
+
+      currentRoute = { type: "custom", id: listId };
+      currentCategoryTitle.textContent = newList.name;
+
+      await fetchAndRenderAll();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
 
 function startRenameList(id) {
+  // 🔐 登录守卫拦截
+  if (!checkAuthGuard()) return;
+
   const textSpan = document.getElementById(`list-text-${id}`);
   const currentName = textSpan.textContent;
   const input = document.createElement("input");
@@ -187,11 +267,14 @@ function startRenameList(id) {
     const nextName = input.value.trim();
     if (nextName && nextName !== currentName) {
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists?id=eq.${id}`, {
-          method: "PATCH",
-          headers: headers,
-          body: JSON.stringify({ name: nextName })
-        });
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/todo_lists?id=eq.${id}`,
+          {
+            method: "PATCH",
+            headers: headers,
+            body: JSON.stringify({ name: nextName }),
+          },
+        );
         if (!res.ok) throw new Error("修改分类名称失败");
         if (currentRoute.type === "custom" && currentRoute.id === id) {
           currentCategoryTitle.textContent = nextName;
@@ -210,23 +293,32 @@ function startRenameList(id) {
 }
 
 async function deleteCustomList(id) {
-  if (!confirm("确定要在云端删除该标签文件夹吗？其中关联的任务也会在数据库中同步清除。")) return;
-  
+  // 🔐 1. 登录守卫拦截
+  if (!checkAuthGuard()) return;
+
+  // ❓ 2. 确认删除弹窗
+  if (
+    !confirm(
+      "确定要在云端删除该标签文件夹吗？其中关联的任务也会在数据库中同步清除。",
+    )
+  )
+    return;
+
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/todos?category=eq.${id}`, {
       method: "DELETE",
-      headers: headers
+      headers: headers,
     });
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/todo_lists?id=eq.${id}`, {
       method: "DELETE",
-      headers: headers
+      headers: headers,
     });
     if (!res.ok) throw new Error("删除分类失败");
 
     currentRoute = { type: "system", id: "today" };
     currentCategoryTitle.textContent = "我的一天";
-    
+
     await fetchAndRenderAll();
   } catch (error) {
     alert(error.message);
@@ -235,8 +327,7 @@ async function deleteCustomList(id) {
 
 function renderApp() {
   todoList.innerHTML = "";
-  
-  // 完美适配：统一使用标准的 created_at 字段计算时间戳并做倒序排列
+
   const sortedTodos = [...todos].sort((a, b) => {
     const timeA = new Date(a.created_at).getTime() || 0;
     const timeB = new Date(b.created_at).getTime() || 0;
@@ -247,18 +338,19 @@ function renderApp() {
   let needToMigrateTasks = [];
 
   let filteredTodos = sortedTodos.filter((todo) => {
-    // 跨天自动流转：使用正确的 created_at 校验
+    // 跨天流转：只有已登录状态下才自动执行数据库流转迁移，避免只读状态冲突
     if (todo.category === "today" && !todo.is_completed) {
       const todoTime = new Date(todo.created_at).getTime() || Date.now();
       const taskDateStr = new Date(todoTime).toLocaleDateString();
       if (taskDateStr !== todayDateStr) {
-        todo.category = "all_tasks"; 
-        needToMigrateTasks.push(todo.id);
+        todo.category = "all_tasks";
+        if (isLoggedIn) needToMigrateTasks.push(todo.id);
       }
     }
 
     if (currentRoute.type === "system") {
-      if (currentRoute.id === "today" && todo.category !== "today") return false;
+      if (currentRoute.id === "today" && todo.category !== "today")
+        return false;
       if (currentRoute.id === "all_tasks") return true;
     } else {
       if (String(todo.category) !== String(currentRoute.id)) return false;
@@ -269,12 +361,12 @@ function renderApp() {
     return true;
   });
 
-  if (needToMigrateTasks.length > 0) {
+  if (needToMigrateTasks.length > 0 && isLoggedIn) {
     needToMigrateTasks.forEach(async (tid) => {
       await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${tid}`, {
         method: "PATCH",
         headers: headers,
-        body: JSON.stringify({ category: "all_tasks" })
+        body: JSON.stringify({ category: "all_tasks" }),
       });
     });
   }
@@ -305,18 +397,27 @@ function renderApp() {
     const titleSpan = li.querySelector(".todo-title");
 
     checkbox.addEventListener("change", async () => {
+      // 🔐 登录守卫拦截状态流转切换
+      if (!checkAuthGuard()) {
+        checkbox.checked = todo.is_completed; // 还原复选框状态
+        return;
+      }
+
       const nextStatus = !todo.is_completed;
       if (nextStatus) {
         playSuccessSound();
         triggerParticleEffect(checkbox);
       }
-      
+
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`, {
-          method: "PATCH",
-          headers: headers,
-          body: JSON.stringify({ is_completed: nextStatus })
-        });
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`,
+          {
+            method: "PATCH",
+            headers: headers,
+            body: JSON.stringify({ is_completed: nextStatus }),
+          },
+        );
         if (!res.ok) throw new Error("更新任务状态失败");
         setTimeout(fetchAndRenderAll, 220);
       } catch (error) {
@@ -325,11 +426,20 @@ function renderApp() {
     });
 
     deleteBtn.addEventListener("click", async () => {
+      // 🔐 1. 登录守卫拦截
+      if (!checkAuthGuard()) return;
+
+      // ❓ 2. 确认删除弹窗
+      if (!confirm("确定要删除这条待办任务吗？此操作不可撤销。")) return;
+
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`, {
-          method: "DELETE",
-          headers: headers
-        });
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/todos?id=eq.${todo.id}`,
+          {
+            method: "DELETE",
+            headers: headers,
+          },
+        );
         if (!res.ok) throw new Error("数据库删除任务失败");
         await fetchAndRenderAll();
       } catch (err) {
@@ -337,7 +447,9 @@ function renderApp() {
       }
     });
 
-    titleSpan.addEventListener("dblclick", () => startInlineEdit(titleSpan, todo.id));
+    titleSpan.addEventListener("dblclick", () =>
+      startInlineEdit(titleSpan, todo.id),
+    );
     todoList.appendChild(li);
   });
 
@@ -346,6 +458,10 @@ function renderApp() {
 
 todoForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  // 🔐 登录守卫拦截
+  if (!checkAuthGuard()) return;
+
   const title = todoInput.value.trim();
   if (!title) return;
 
@@ -355,14 +471,13 @@ todoForm.addEventListener("submit", async (e) => {
   }
 
   const timestamp = Date.now();
-  // 💎 核心修复点：精准对齐你的 Supabase 字段，移除非法字段
   const newTodo = {
     id: "task_" + timestamp + "_" + Math.random().toString(36).substr(2, 5),
     title: title,
     is_completed: false,
     category: String(targetCategory),
     created_at: new Date().toISOString(),
-    date_tag: getFormatedDateTag() // 保留，因为你的表里确实有这一列
+    date_tag: getFormatedDateTag(),
   };
 
   todoInput.value = "";
@@ -371,7 +486,7 @@ todoForm.addEventListener("submit", async (e) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/todos`, {
       method: "POST",
       headers: headers,
-      body: JSON.stringify(newTodo)
+      body: JSON.stringify(newTodo),
     });
     if (!res.ok) throw new Error("向云端添加任务失败");
 
@@ -383,6 +498,9 @@ todoForm.addEventListener("submit", async (e) => {
 });
 
 function startInlineEdit(spanElement, id) {
+  // 🔐 登录守卫拦截
+  if (!checkAuthGuard()) return;
+
   const currentText = spanElement.textContent;
   const input = document.createElement("input");
   input.type = "text";
@@ -400,7 +518,7 @@ function startInlineEdit(spanElement, id) {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/todos?id=eq.${id}`, {
           method: "PATCH",
           headers: headers,
-          body: JSON.stringify({ title: nextText })
+          body: JSON.stringify({ title: nextText }),
         });
         if (!res.ok) throw new Error("更新任务文本失败");
       } catch (error) {
@@ -421,7 +539,9 @@ function startInlineEdit(spanElement, id) {
 function setupSystemRoutes() {
   document.querySelectorAll(".nav-menu .nav-item").forEach((item) => {
     item.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item, .custom-list-item").forEach((n) => n.classList.remove("active"));
+      document
+        .querySelectorAll(".nav-item, .custom-list-item")
+        .forEach((n) => n.classList.remove("active"));
       item.classList.add("active");
       currentRoute = { type: "system", id: item.dataset.id };
       currentCategoryTitle.textContent = item.textContent.trim();
@@ -433,7 +553,9 @@ function setupSystemRoutes() {
 function setupFilters() {
   document.querySelectorAll(".filter-controls .filter-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".filter-controls .filter-btn").forEach((b) => b.classList.remove("active"));
+      document
+        .querySelectorAll(".filter-controls .filter-btn")
+        .forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentFilter = btn.dataset.filter;
       renderApp();
@@ -444,14 +566,16 @@ function setupFilters() {
 function initTheme() {
   const savedTheme = localStorage.getItem("theme") || "dark";
   document.documentElement.setAttribute("data-theme", savedTheme);
-  themeToggleBtn.querySelector("i").className = savedTheme === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
+  themeToggleBtn.querySelector("i").className =
+    savedTheme === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
 
   themeToggleBtn.addEventListener("click", () => {
     const curr = document.documentElement.getAttribute("data-theme");
     const next = curr === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-    themeToggleBtn.querySelector("i").className = next === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
+    themeToggleBtn.querySelector("i").className =
+      next === "dark" ? "fa-solid fa-sun" : "fa-regular fa-moon";
   });
 }
 
@@ -498,9 +622,10 @@ function triggerParticleEffect(element) {
   canvas.height = window.innerHeight;
 
   const particles = [];
-  const colors = document.documentElement.getAttribute("data-theme") === "dark"
-    ? ["#ffffff", "#aaaaaa", "#00b894"]
-    : ["#111111", "#aaaaaa", "#2ed573"];
+  const colors =
+    document.documentElement.getAttribute("data-theme") === "dark"
+      ? ["#ffffff", "#aaaaaa", "#00b894"]
+      : ["#111111", "#aaaaaa", "#2ed573"];
 
   for (let i = 0; i < 25; i++) {
     const angle = Math.random() * Math.PI * 2;
