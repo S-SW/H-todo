@@ -17,9 +17,9 @@ const headers = {
 // ==========================================================================
 // 权限安全验证模块 (SHA-256 哈希加密)
 // ==========================================================================
-// 预设的访问密码哈希值（当前对应明文密码为：123）
+// 预设的访问密码哈希值
 const AUTH_PASSWORD_HASH =
-  "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
+  "4ae5e52ded0efb9f628c83255aecab77672f11e367becbe1afa7bb38b7a09677";
 
 // 全局登录状态隔离锁
 let isLoggedIn = false;
@@ -79,18 +79,27 @@ const currentDateEl = document.getElementById("current-date");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const customListsContainer = document.getElementById("custom-lists-container");
 
-// 💡 异步生命周期初始化：必须先走完密码验证，再决定是否开启权限并拉取数据
+// ==========================================================================
+// 💡 异步生命周期初始化（性能优化版：并发执行密码验证与数据预加载）
+// ==========================================================================
 document.addEventListener("DOMContentLoaded", async () => {
   initClock();
   initTheme();
   setupSystemRoutes();
   setupFilters();
 
-  // 1. 优先执行登录验证
+  // 🚀 【核心优化点】立即在后台发起网络请求，不等待密码弹窗，启动数据预加载
+  const dataFetchPromise = fetchAndRenderAll();
+
+  // 🔒 同时弹出密码验证（此时用户在思考、输入密码，网络请求正在后台并行的跑）
   isLoggedIn = await requireLogin();
 
-  // 2. 无论是否登录成功，均允许拉取并渲染数据（只读模式也可以看，但不能改删）
-  fetchAndRenderAll();
+  // 🏁 密码处理完毕后，确保后台的数据拉取和渲染也已经完成
+  try {
+    await dataFetchPromise;
+  } catch (error) {
+    console.error("预加载数据失败:", error);
+  }
 });
 
 function initClock() {
